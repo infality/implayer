@@ -20,10 +20,11 @@ Hotkeys:
 * `J`/`K` Move selected songs up/down
 * `Delete` Remove song from playlist
 * `Ctrl+Click`/`Shift+Click` Extended selection
+* `Right-click` Context menu for more options
 
 ## Screenshot
 
-![screenshot][implayer.png]
+![screenshot](implayer.png)
 
 ## Why?
 
