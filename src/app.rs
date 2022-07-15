@@ -115,6 +115,7 @@ impl Song {
 impl Hash for Song {
     fn hash<H: Hasher>(&self, state: &mut H) {
         self.path.hash(state);
+        self.duration.hash(state);
     }
 }
 
@@ -856,6 +857,25 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                                             .remove(*i);
                                     }
                                     state.selected_song_indices.clear();
+                                }
+                                if imgui::MenuItem::new("Reload file").build(ui) {
+                                    let path = state.playlists[state.selected_playlist_index].songs
+                                        [state.selected_song_indices[0]]
+                                        .path
+                                        .clone();
+                                    let duration = Some(
+                                        player::get_duration(
+                                            &Path::new(&state.base_path).join(&path),
+                                        ) / 1000
+                                            * 1000,
+                                    );
+                                    for playlist in state.playlists.iter_mut() {
+                                        for song in playlist.songs.iter_mut() {
+                                            if song.path == *path {
+                                                song.duration = duration;
+                                            }
+                                        }
+                                    }
                                 }
                                 let _disabled_token =
                                     ui.begin_disabled(state.selected_song_indices.len() != 1);
