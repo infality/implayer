@@ -5,6 +5,7 @@ mod app;
 mod clipboard;
 mod output;
 mod player;
+mod resampler;
 
 use glutin::{
     event::{Event, WindowEvent},
@@ -129,7 +130,7 @@ fn main() {
                 }
 
                 winit_platform.prepare_render(&ui, window.window());
-                let draw_data = ui.render();
+                let draw_data = imgui_context.render();
 
                 // This is the only extra render step to add
                 ig_renderer

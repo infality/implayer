@@ -35,6 +35,7 @@ pub const PLAYING_COLOR: [f32; 4] = [0.00, 0.70, 0.00, 1.0];
 pub const NOT_EXISTING_COLOR: [f32; 4] = [0.70, 0.00, 0.00, 1.0];
 pub const HOVERED_BG: [f32; 4] = DARK5;
 pub const ACTIVE_BG: [f32; 4] = DARK6;
+pub const DRAG: [f32; 4] = [0.00, 0.28, 0.50, 0.85];
 
 const ALL_PLAYLIST_NAME: &str = "All";
 const ALL_UNUSED_PLAYLIST_NAME: &str = "All Unused";
@@ -128,6 +129,8 @@ pub struct State {
     song_search_text: String,
     has_textbox_focus: bool,
 
+    dragged_songs: Vec<Song>,
+
     original_file_name: String,
     file_name_text: String,
 
@@ -211,6 +214,8 @@ pub fn initialize(hwnd: Option<*mut ffi::c_void>) -> State {
         new_playlist_text: String::new(),
         song_search_text: String::new(),
         has_textbox_focus: false,
+
+        dragged_songs: Vec::new(),
 
         original_file_name: String::new(),
         file_name_text: String::new(),
@@ -408,7 +413,7 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
             state.selected_song_indices.clear();
         }
 
-        if ui.is_key_index_pressed(glutin::event::VirtualKeyCode::J as i32)
+        if ui.is_key_index_pressed(glutin::event::VirtualKeyCode::J as u32)
             && !state.selected_song_indices.is_empty()
             && state.song_search_text.is_empty()
             && !is_default_playlist(&state.playlists[state.selected_playlist_index].name)
@@ -438,7 +443,7 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
             }
             song_scroll_index = Some(*state.selected_song_indices.last().unwrap());
         }
-        if ui.is_key_index_pressed(glutin::event::VirtualKeyCode::K as i32)
+        if ui.is_key_index_pressed(glutin::event::VirtualKeyCode::K as u32)
             && !state.selected_song_indices.is_empty()
             && state.song_search_text.is_empty()
             && !is_default_playlist(&state.playlists[state.selected_playlist_index].name)
@@ -471,7 +476,7 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
     }
 
     state.has_textbox_focus = false;
-    imgui::Window::new("main_window")
+    ui.window("main_window")
         .position([0.0, 0.0], Condition::Once)
         .size([width, height], Condition::Always)
         .title_bar(false)
@@ -479,11 +484,11 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
         .movable(false)
         .collapsible(false)
         .draw_background(true)
-        .build(ui, || {
-            imgui::ChildWindow::new("playlists")
+        .build(|| {
+            ui.child_window("playlists")
                 .size([playlists_width, height - TEXTBOXES_HEIGHT - CONTROLS_HEIGHT])
                 .movable(false)
-                .build(ui, || {
+                .build(|| {
                     ui.get_window_draw_list()
                         .add_rect(
                             [0.0, 0.0],
@@ -496,12 +501,13 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                     ui.set_cursor_pos([ui.cursor_pos()[0], ui.cursor_pos()[1] + 2.0]);
                     let horizontal_padding = 6.0;
                     for i in 0..state.playlists.len() {
-                        let token = ui.push_id(Id::Int(i as i32));
+                        let token = ui.push_id_usize(i);
                         // Draw selectable
-                        if imgui::Selectable::new("")
+                        if ui
+                            .selectable_config("")
                             .selected(i == state.selected_playlist_index)
                             .allow_double_click(true)
-                            .build(ui)
+                            .build()
                         {
                             let playlist = &state.playlists[i];
                             state.selected_playlist_index = i;
@@ -522,9 +528,40 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                                     state.playing_playlist_index = Some(i);
                                     state.playing_song_index = Some(result.0);
                                     set_current_metadata(state);
+                                    state
+                                        .media_controls
+                                        .set_playback(MediaPlayback::Playing { progress: None })
+                                        .unwrap();
                                 }
                             }
                         };
+
+                        // Drop
+                        if !state.dragged_songs.is_empty()
+                            && ui.is_item_visible()
+                            && is_point_in_rect(
+                                ui.io().mouse_pos,
+                                add_pos(ui.item_rect_min(), [0.0, 1.0]),
+                                ui.item_rect_max(),
+                            )
+                        {
+                            if ui.is_mouse_released(MouseButton::Left) {
+                                for dragged_index in (0..state.dragged_songs.len()).rev() {
+                                    state.playlists[i]
+                                        .songs
+                                        .insert(0, state.dragged_songs.remove(dragged_index));
+                                }
+                                state.dragged_songs.clear();
+                            } else {
+                                ui.get_window_draw_list()
+                                    .add_rect(
+                                        add_pos(ui.item_rect_min(), [4.0, 1.0]),
+                                        sub_pos(ui.item_rect_max(), [4.0, 0.0]),
+                                        DRAG,
+                                    )
+                                    .build();
+                            }
+                        }
 
                         if ui.is_item_clicked_with_button(MouseButton::Right) {
                             ui.open_popup("playlist_context_menu");
@@ -533,9 +570,10 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                             let _style_token =
                                 ui.push_style_var(StyleVar::WindowPadding([4.0, 10.0]));
                             let playlist = &mut state.playlists[i];
-                            if imgui::MenuItem::new("Save")
+                            if ui
+                                .menu_item_config("Save")
                                 .enabled(!is_default_playlist(&playlist.name))
-                                .build(ui)
+                                .build()
                             {
                                 save_playlist(&state.base_path, playlist);
                             }
@@ -597,16 +635,17 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                         let color_token = ui.push_style_color(StyleColor::Text, TEXT2);
                         ui.text(&playlist_info);
                         color_token.pop();
+
                         token.pop();
                     }
                     ui.set_cursor_pos([ui.cursor_pos()[0], ui.cursor_pos()[1] + 2.0]);
                 });
 
             ui.set_cursor_pos([0.0, height - TEXTBOXES_HEIGHT - CONTROLS_HEIGHT]);
-            imgui::ChildWindow::new("textboxes")
+            ui.child_window("textboxes")
                 .size([playlists_width, TEXTBOXES_HEIGHT])
                 .movable(false)
-                .build(ui, || {
+                .build(|| {
                     ui.get_window_draw_list()
                         .add_rect(
                             [0.0, 0.0],
@@ -617,7 +656,7 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                         .build();
                     let style_token = ui.push_style_var(StyleVar::ItemSpacing([1.0, 0.0]));
 
-                    let token = ui.push_id(Id::Str("new_playlist_textbox"));
+                    let token = ui.push_id("new_playlist_textbox");
                     ui.set_next_item_width(playlists_width / 2.0);
                     if ui
                         .input_text("", &mut state.new_playlist_text)
@@ -642,7 +681,7 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                     state.has_textbox_focus |= ui.is_item_focused();
                     token.pop();
 
-                    let token = ui.push_id(Id::Str("song_search_textbox"));
+                    let token = ui.push_id("song_search_textbox");
                     ui.same_line();
                     ui.set_next_item_width(playlists_width / 2.0);
                     if ui
@@ -659,10 +698,12 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                 });
 
             ui.set_cursor_pos([playlists_width, 0.0]);
-            imgui::ChildWindow::new("songs_header")
+            ui.child_window("songs_header")
                 .size([width - playlists_width, SONGS_HEADER_HEIGHT])
                 .movable(false)
-                .build(ui, || {
+                .build(|| {
+                    let window_width =
+                        ui.window_content_region_max()[0] - ui.window_content_region_min()[0];
                     ui.get_window_draw_list()
                         .add_rect([0.0, 0.0], [width, SONGS_HEADER_HEIGHT], SONGS_HEADER_BG)
                         .filled(true)
@@ -676,10 +717,8 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
 
                     // Draw header
                     let rect_min = ui.window_pos();
-                    let rect_max = add_pos(
-                        ui.window_pos(),
-                        [ui.window_content_region_width() / 2.0, SONGS_HEADER_HEIGHT],
-                    );
+                    let rect_max =
+                        add_pos(ui.window_pos(), [window_width / 2.0, SONGS_HEADER_HEIGHT]);
                     if ui.is_mouse_hovering_rect(rect_min, rect_max) {
                         ui.get_window_draw_list()
                             .add_rect(rect_min, rect_max, HOVERED_BG)
@@ -688,14 +727,10 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                     }
                     ui.text("Song");
 
-                    let duration_text_x = ui.window_content_region_width()
-                        - horizontal_padding
-                        - ui.calc_text_size("Duration")[0];
+                    let duration_text_x =
+                        window_width - horizontal_padding - ui.calc_text_size("Duration")[0];
 
-                    let rect_min = add_pos(
-                        ui.window_pos(),
-                        [ui.window_content_region_width() / 2.0, 0.0],
-                    );
+                    let rect_min = add_pos(ui.window_pos(), [window_width / 2.0, 0.0]);
                     let rect_max = add_pos(ui.window_pos(), [duration_text_x, SONGS_HEADER_HEIGHT]);
                     if ui.is_mouse_hovering_rect(rect_min, rect_max) {
                         ui.get_window_draw_list()
@@ -703,14 +738,11 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                             .filled(true)
                             .build();
                     }
-                    ui.same_line_with_pos(ui.window_content_region_width() / 2.0);
+                    ui.same_line_with_pos(window_width / 2.0);
                     ui.text("Artist");
 
                     let rect_min = add_pos(ui.window_pos(), [duration_text_x, 0.0]);
-                    let rect_max = add_pos(
-                        ui.window_pos(),
-                        [ui.window_content_region_width(), SONGS_HEADER_HEIGHT],
-                    );
+                    let rect_max = add_pos(ui.window_pos(), [window_width, SONGS_HEADER_HEIGHT]);
                     if ui.is_mouse_hovering_rect(rect_min, rect_max) {
                         ui.get_window_draw_list()
                             .add_rect(rect_min, rect_max, HOVERED_BG)
@@ -722,13 +754,15 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                 });
 
             ui.set_cursor_pos([playlists_width, SONGS_HEADER_HEIGHT]);
-            imgui::ChildWindow::new("songs")
+            ui.child_window("songs")
                 .size([
                     width - playlists_width,
                     height - CONTROLS_HEIGHT - SONGS_HEADER_HEIGHT,
                 ])
                 .movable(false)
-                .build(ui, || {
+                .build(|| {
+                    let window_width =
+                        ui.window_content_region_max()[0] - ui.window_content_region_min()[0];
                     let horizontal_padding = 6.0;
 
                     ui.set_cursor_pos([ui.cursor_pos()[0], ui.cursor_pos()[1] + 2.0]);
@@ -743,14 +777,15 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                         }
                         counter += 1;
 
-                        let token = ui.push_id(Id::Int(i as i32));
+                        let token = ui.push_id_usize(i);
                         // Draw selectable
                         draw_list.channels_split(2, |channel| {
                             channel.set_current(1);
-                            if imgui::Selectable::new("")
+                            if ui
+                                .selectable_config("")
                                 .selected(state.selected_song_indices.contains(&i))
                                 .allow_double_click(true)
-                                .build(ui)
+                                .build()
                             {
                                 if ui.io().key_shift {
                                     if !state.selected_song_indices.is_empty() {
@@ -793,9 +828,14 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                                             Some(state.selected_playlist_index);
                                         state.playing_song_index = Some(i);
                                         set_current_metadata(state);
+                                        state
+                                            .media_controls
+                                            .set_playback(MediaPlayback::Playing { progress: None })
+                                            .unwrap();
                                     }
                                 }
                             };
+
                             if ui.is_item_clicked_with_button(MouseButton::Right) {
                                 if !state.selected_song_indices.contains(&i) {
                                     state.selected_song_indices.clear();
@@ -823,7 +863,7 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                                         {
                                             continue;
                                         }
-                                        if imgui::MenuItem::new(&playlist.name).build(ui) {
+                                        if ui.menu_item(&playlist.name) {
                                             state.selected_song_indices.sort_unstable();
                                             for i in state.selected_song_indices.iter().rev() {
                                                 playlist.songs.insert(0, songs[*i].clone());
@@ -840,7 +880,7 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                                         }
                                     }
                                 });
-                                if imgui::MenuItem::new("Remove").build(ui) {
+                                if ui.menu_item("Remove") {
                                     state.selected_song_indices.sort_unstable();
                                     for i in state.selected_song_indices.iter().rev() {
                                         // Update playing song index
@@ -858,7 +898,7 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                                     }
                                     state.selected_song_indices.clear();
                                 }
-                                if imgui::MenuItem::new("Reload file").build(ui) {
+                                if ui.menu_item("Reload file") {
                                     let path = state.playlists[state.selected_playlist_index].songs
                                         [state.selected_song_indices[0]]
                                         .path
@@ -892,7 +932,7 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                                         String::new()
                                     };
 
-                                    let token = ui.push_id(Id::Str("file_name_textbox"));
+                                    let token = ui.push_id("file_name_textbox");
                                     ui.set_next_item_width(500.0);
                                     if ui
                                         .input_text("", &mut state.file_name_text)
@@ -949,19 +989,43 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                             None
                         };
 
+                        // Start dragging (if selection is empty or if selected song is dragged)
+                        if ui.is_mouse_dragging(MouseButton::Left)
+                            && ui.is_item_visible()
+                            && state.dragged_songs.is_empty()
+                            && is_point_in_rect(
+                                sub_pos(ui.io().mouse_pos, ui.mouse_drag_delta()),
+                                add_pos(ui.item_rect_min(), [0.0, 1.0]),
+                                ui.item_rect_max(),
+                            )
+                            && (state.selected_song_indices.is_empty()
+                                || state.selected_song_indices.contains(&i))
+                        {
+                            if state.selected_song_indices.is_empty() {
+                                state.selected_song_indices.push(i);
+                            }
+                            for selected_song_index in state.selected_song_indices.iter() {
+                                state.dragged_songs.push(
+                                    state.playlists[state.selected_playlist_index].songs
+                                        [*selected_song_index]
+                                        .clone(),
+                                );
+                            }
+                        }
+
                         // Draw song name
                         ui.same_line_with_pos(ui.cursor_pos()[0] + horizontal_padding);
                         ui.text(&song.name);
 
                         // Draw song artist
-                        ui.same_line_with_pos(ui.window_content_region_width() / 2.0);
+                        ui.same_line_with_pos(window_width / 2.0);
                         ui.text(&song.artist);
 
                         // Draw song duration
                         let song_duration = ms_to_string(song.duration.unwrap_or(0));
 
                         ui.same_line_with_pos(
-                            ui.window_content_region_width()
+                            window_width
                                 - horizontal_padding
                                 - ui.calc_text_size(&song_duration)[0],
                         );
@@ -982,10 +1046,10 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                 });
 
             ui.set_cursor_pos([0.0, height - CONTROLS_HEIGHT]);
-            imgui::ChildWindow::new("controls")
+            ui.child_window("controls")
                 .size([width, CONTROLS_HEIGHT])
                 .movable(false)
-                .build(ui, || {
+                .build(|| {
                     ui.get_window_draw_list()
                         .add_rect(
                             [0.0, height - CONTROLS_HEIGHT],
@@ -1088,11 +1152,12 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                     };
                     ui.set_cursor_pos([ui.cursor_pos()[0], ui.cursor_pos()[1] + 5.0]);
                     ui.set_next_item_width(middle_width - 2.0 * style.item_spacing[0]);
-                    let token = ui.push_id(Id::Str("song_slider"));
-                    if Slider::new("", 0.0, 1.0)
+                    let token = ui.push_id("song_slider");
+                    if ui
+                        .slider_config("", 0.0, 1.0)
                         .display_format("")
                         .flags(SliderFlags::NO_INPUT)
-                        .build(ui, &mut progress)
+                        .build(&mut progress)
                     {
                         state.last_progress = Some(progress);
                     }
@@ -1128,11 +1193,12 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                         ui.cursor_pos()[1] + height_middle - ui.current_font().font_size / 2.0,
                     ]);
                     ui.set_next_item_width(width / 8.0);
-                    let token = ui.push_id(Id::Str("volume_slider"));
-                    if Slider::new("", 0.4, 1.2)
+                    let token = ui.push_id("volume_slider");
+                    if ui
+                        .slider_config("", 0.4, 1.2)
                         .display_format("")
                         .flags(SliderFlags::NO_INPUT)
-                        .build(ui, &mut state.volume)
+                        .build(&mut state.volume)
                     {
                         let value = if state.volume == 0.4 {
                             0.0
@@ -1146,6 +1212,26 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                     }
                     token.pop();
                 });
+
+            if !state.dragged_songs.is_empty()
+                && (ui.is_mouse_released(MouseButton::Left) || ui.is_key_pressed(Key::Escape))
+            {
+                ui.reset_mouse_drag_delta(MouseButton::Left);
+                state.dragged_songs.clear();
+            }
+
+            // Drag
+            if ui.is_mouse_dragging(MouseButton::Left) && !state.dragged_songs.is_empty() {
+                ui.get_foreground_draw_list()
+                    .add_circle(ui.io().mouse_pos, 10.0, DRAG)
+                    .filled(true)
+                    .build();
+                ui.get_foreground_draw_list().add_text(
+                    add_pos(ui.io().mouse_pos, [5.0, -20.0]),
+                    TEXT1,
+                    state.dragged_songs.len().to_string(),
+                );
+            }
         });
     state.is_playing
 }
@@ -1231,6 +1317,10 @@ fn play(state: &mut State, playlist_index: usize, song_index: usize) {
     state.playing_playlist_index = Some(playlist_index);
     state.playing_song_index = Some(song_index);
     set_current_metadata(state);
+    state
+        .media_controls
+        .set_playback(MediaPlayback::Playing { progress: None })
+        .unwrap();
 }
 
 fn pause(state: &mut State) {
@@ -1396,4 +1486,18 @@ fn ms_to_string(milli_seconds: u64) -> String {
 
 fn add_pos(first: [f32; 2], second: [f32; 2]) -> [f32; 2] {
     [first[0] + second[0], first[1] + second[1]]
+}
+
+fn sub_pos(first: [f32; 2], second: [f32; 2]) -> [f32; 2] {
+    [first[0] - second[0], first[1] - second[1]]
+}
+
+fn is_point_in_rect(point: [f32; 2], rect_min: [f32; 2], rect_max: [f32; 2]) -> bool {
+    if point[0] < rect_min[0] || point[1] < rect_min[1] {
+        return false;
+    }
+    if point[0] > rect_max[0] || point[1] > rect_max[1] {
+        return false;
+    }
+    true
 }
