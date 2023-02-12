@@ -546,12 +546,13 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                             )
                         {
                             if ui.is_mouse_released(MouseButton::Left) {
-                                for dragged_index in (0..state.dragged_songs.len()).rev() {
+                                let song_count = state.dragged_songs.len();
+                                for dragged_index in (0..song_count).rev() {
                                     state.playlists[i]
                                         .songs
                                         .insert(0, state.dragged_songs.remove(dragged_index));
                                 }
-                                state.dragged_songs.clear();
+                                increment_indices(state, i, song_count);
                             } else {
                                 ui.get_window_draw_list()
                                     .add_rect(
@@ -691,6 +692,12 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                     {
                         state.selected_song_indices.clear();
                     }
+                    if !ui.is_item_focused()
+                        && ui.io().key_ctrl
+                        && ui.is_key_pressed_no_repeat(Key::F)
+                    {
+                        ui.set_keyboard_focus_here_with_offset(FocusedWidget::Previous);
+                    }
                     state.has_textbox_focus |= ui.is_item_focused();
                     token.pop();
 
@@ -798,6 +805,11 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
 
                                         state.selected_song_indices.truncate(1);
                                         for j in range {
+                                            if !state.song_search_text.is_empty()
+                                                && !songs[j].is_matching(&state.song_search_text)
+                                            {
+                                                continue;
+                                            }
                                             state.selected_song_indices.push(j);
                                         }
                                     }
@@ -855,28 +867,26 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
                                 let _style_token =
                                     ui.push_style_var(StyleVar::WindowPadding([4.0, 10.0]));
                                 ui.menu("Add to", || {
-                                    for (playlist_index, playlist) in
-                                        state.playlists.iter_mut().enumerate()
-                                    {
-                                        if playlist.name == ALL_PLAYLIST_NAME
-                                            || playlist.name == ALL_UNUSED_PLAYLIST_NAME
+                                    for playlist_index in 0..state.playlists.len() {
+                                        let playlist_name = &state.playlists[playlist_index].name;
+                                        if playlist_name == ALL_PLAYLIST_NAME
+                                            || playlist_name == ALL_UNUSED_PLAYLIST_NAME
                                         {
                                             continue;
                                         }
-                                        if ui.menu_item(&playlist.name) {
+                                        if ui.menu_item(playlist_name) {
                                             state.selected_song_indices.sort_unstable();
                                             for i in state.selected_song_indices.iter().rev() {
-                                                playlist.songs.insert(0, songs[*i].clone());
-
-                                                // Update playing song index
-                                                if state.playing_playlist_index
-                                                    == Some(playlist_index)
-                                                    && state.playing_song_index.is_some()
-                                                {
-                                                    state.playing_song_index =
-                                                        Some(state.playing_song_index.unwrap() + 1);
-                                                }
+                                                state.playlists[playlist_index]
+                                                    .songs
+                                                    .insert(0, songs[*i].clone());
                                             }
+
+                                            increment_indices(
+                                                state,
+                                                playlist_index,
+                                                state.selected_song_indices.len(),
+                                            );
                                         }
                                     }
                                 });
@@ -1299,6 +1309,20 @@ fn change_file_name(state: &mut State, artist: &str, name: &str) {
                 song.exists = exists;
             }
         }
+    }
+}
+
+fn increment_indices(state: &mut State, playlist_index: usize, amount: usize) {
+    // Update selected song indices
+    if state.selected_playlist_index == playlist_index && !state.selected_song_indices.is_empty() {
+        for i in state.selected_song_indices.iter_mut() {
+            *i += amount;
+        }
+    }
+
+    // Update playing song index
+    if state.playing_playlist_index == Some(playlist_index) && state.playing_song_index.is_some() {
+        state.playing_song_index = Some(state.playing_song_index.unwrap() + amount);
     }
 }
 
