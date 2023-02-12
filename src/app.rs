@@ -413,7 +413,7 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
             state.selected_song_indices.clear();
         }
 
-        if ui.is_key_index_pressed(glutin::event::VirtualKeyCode::J as u32)
+        if ui.is_key_pressed(Key::J)
             && !state.selected_song_indices.is_empty()
             && state.song_search_text.is_empty()
             && !is_default_playlist(&state.playlists[state.selected_playlist_index].name)
@@ -443,7 +443,7 @@ pub fn draw(ui: &Ui, width: f32, height: f32, state: &mut State) -> bool {
             }
             song_scroll_index = Some(*state.selected_song_indices.last().unwrap());
         }
-        if ui.is_key_index_pressed(glutin::event::VirtualKeyCode::K as u32)
+        if ui.is_key_pressed(Key::K)
             && !state.selected_song_indices.is_empty()
             && state.song_search_text.is_empty()
             && !is_default_playlist(&state.playlists[state.selected_playlist_index].name)
