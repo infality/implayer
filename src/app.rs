@@ -186,7 +186,7 @@ pub fn initialize(hwnd: Option<*mut ffi::c_void>) -> State {
         std::process::exit(1);
     }
 
-    let music_extensions = vec!["mp3", "m4a"];
+    let music_extensions = vec!["flac", "mp3", "m4a", "ogg", "wav"];
 
     let (action_tx, action_rx) = mpsc::channel();
     let (song_ended_tx, song_ended_rx) = mpsc::channel();

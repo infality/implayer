@@ -11,7 +11,7 @@ imgui = "^0.10.0"
 imgui-glow-renderer = "^0.10.0"
 imgui-winit-support = "^0.10.0"
 cpal = "0.13.3"
-symphonia = { version = "0.5.2", features = ["aac", "mp3", "isomp4"] }
+symphonia = { version = "0.5.2", features = ["all-codecs", "all-formats"] }
 rb = "0.4.1"
 copypasta = "0.8.1"
 souvlaki = "0.5.3"
