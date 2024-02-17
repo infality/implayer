@@ -24,7 +24,7 @@ jobs:
       uses: actions/upload-artifact@v2
       with:
         name: linux
-        path: target\release\implayer.exe
+        path: target/release/implayer
 
   build-windows:
     runs-on: windows-latest
