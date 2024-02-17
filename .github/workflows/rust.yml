@@ -10,8 +10,21 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  build-linux:
+    runs-on: ubuntu-latest
 
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v3
+    - name: Build
+      run: cargo build --release --verbose
+    - name: Upload
+      uses: actions/upload-artifact@v2
+      with:
+        name: linux
+        path: target\release\implayer.exe
+
+  build-windows:
     runs-on: windows-latest
 
     steps:
@@ -22,5 +35,5 @@ jobs:
     - name: Upload
       uses: actions/upload-artifact@v2
       with:
-        name: release-win
-        path: D:\a\implayer\implayer\target\release\implayer.exe
+        name: windows
+        path: target\release\implayer.exe
