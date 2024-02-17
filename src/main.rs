@@ -1,11 +1,14 @@
 #![windows_subsystem = "windows"]
 
 use std::time::{Duration, Instant};
+mod actions;
 mod app;
 mod clipboard;
+mod download;
 mod output;
 mod player;
 mod resampler;
+mod util;
 
 use glutin::{
     event::{Event, WindowEvent},
@@ -15,6 +18,8 @@ use glutin::{
 use imgui_winit_support::WinitPlatform;
 
 const TITLE: &str = "Playlist Player";
+const FAST_REDRAW_MS_DELAY: u64 = 16;
+const IDLE_REDRAW_MS_DELAY: u64 = 1000;
 
 type Window = WindowedContext<glutin::PossiblyCurrent>;
 
@@ -24,7 +29,7 @@ fn main() {
     imgui_context.style_mut().cell_padding = [0.0, 0.0];
     imgui_context.style_mut().window_padding = [0.0, 0.0];
     imgui_context.style_mut().window_border_size = 0.0;
-    imgui_context.style_mut().scrollbar_rounding = 0.0;
+    imgui_context.style_mut().scrollbar_rounding = f32::MAX;
 
     imgui_context.style_mut()[imgui::StyleColor::Text] = app::TEXT1;
     imgui_context.style_mut()[imgui::StyleColor::FrameBg] = app::DARK2;
@@ -71,6 +76,7 @@ fn main() {
 
     let mut redraws_required = 0;
     let mut fast_redrawing = false;
+    let mut scroll_delta = 0.0;
 
     event_loop.run(move |event, _, control_flow| {
         match event {
@@ -79,10 +85,12 @@ fn main() {
                 // https://github.com/rust-windowing/winit/issues/1634
             }
             Event::MainEventsCleared => {
-                app::handle_media_keys(&mut state);
+                actions::handle_media_keys(&mut state);
                 if redraws_required > 0
-                    || (fast_redrawing && Instant::now() - last_frame >= Duration::from_millis(200))
-                    || Instant::now() - last_frame >= Duration::from_millis(1000)
+                    || (fast_redrawing
+                        && (Instant::now() - last_frame)
+                            >= Duration::from_millis(FAST_REDRAW_MS_DELAY))
+                    || Instant::now() - last_frame >= Duration::from_millis(IDLE_REDRAW_MS_DELAY)
                 {
                     redraws_required -= 1;
 
@@ -98,13 +106,13 @@ fn main() {
                 } else if fast_redrawing {
                     *control_flow = ControlFlow::WaitUntil(
                         Instant::now()
-                            .checked_add(Duration::from_millis(200))
+                            .checked_add(Duration::from_millis(FAST_REDRAW_MS_DELAY))
                             .unwrap(),
                     );
                 } else {
                     *control_flow = ControlFlow::WaitUntil(
                         Instant::now()
-                            .checked_add(Duration::from_millis(1000))
+                            .checked_add(Duration::from_millis(IDLE_REDRAW_MS_DELAY))
                             .unwrap(),
                     );
                 }
@@ -126,7 +134,9 @@ fn main() {
                         client_size.width as f32,
                         client_size.height as f32,
                         &mut state,
+                        scroll_delta,
                     );
+                    scroll_delta = 0.0;
                 }
 
                 winit_platform.prepare_render(&ui, window.window());
@@ -147,10 +157,25 @@ fn main() {
                 // We may need to redraw twice after an event. The first draw may make changes to
                 // the GUI that are not reflected until the second draw. In some cases more redraws
                 // may be needed.
-                if let Event::WindowEvent { .. } = event {
+                let mut skip_event_handling = false;
+
+                // We handle mouse scroll events ourself, so skip further handling here
+                if let Event::WindowEvent { ref event, .. } = event {
                     redraws_required = 2;
+                    match event {
+                        WindowEvent::MouseWheel { delta, .. } => {
+                            scroll_delta = match delta {
+                                winit::event::MouseScrollDelta::LineDelta(_, d) => *d,
+                                winit::event::MouseScrollDelta::PixelDelta(d) => d.y as f32,
+                            };
+                            skip_event_handling = true;
+                        }
+                        _ => (),
+                    };
                 }
-                winit_platform.handle_event(imgui_context.io_mut(), window.window(), &event);
+                if !skip_event_handling {
+                    winit_platform.handle_event(imgui_context.io_mut(), window.window(), &event);
+                }
             }
         }
     })
@@ -162,7 +187,7 @@ fn create_window() -> (EventLoop<()>, Window) {
         .with_title(TITLE)
         .with_inner_size(glutin::dpi::LogicalSize::new(1500, 780));
     let window = glutin::ContextBuilder::new()
-        .with_vsync(true)
+        .with_vsync(false)
         .build_windowed(window, &event_loop)
         .expect("could not create window");
     let window = unsafe {
@@ -206,7 +231,7 @@ fn imgui_init(window: &Window) -> (WinitPlatform, imgui::Context) {
                 glyph_ranges: imgui::FontGlyphRanges::from_slice(&[1, 65535, 0]),
                 ..Default::default()
             }),
-            size_pixels: 32.0,
+            size_pixels: 40.0,
         }]);
 
     imgui_context.io_mut().font_global_scale = (1.0 / winit_platform.hidpi_factor()) as f32;

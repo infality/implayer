@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-glow = "^0.10.0"
+glow = "^0.12.0"
 winit = "^0.27.2"
 glutin = "0.29.1"
-imgui = "^0.10.0"
-imgui-glow-renderer = "^0.10.0"
-imgui-winit-support = "^0.10.0"
+imgui = "^0.11.0"
+imgui-glow-renderer = "^0.11.0"
+imgui-winit-support = "^0.11.0"
 cpal = "0.13.3"
 symphonia = { version = "0.5.2", features = ["all-codecs", "all-formats"] }
 rb = "0.4.1"
