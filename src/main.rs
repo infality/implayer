@@ -62,11 +62,10 @@ fn main() {
 
     #[cfg(target_os = "windows")]
     let hwnd = {
-        use raw_window_handle::windows::WindowsHandle;
         use raw_window_handle::HasRawWindowHandle;
 
-        let handle: WindowsHandle = match window.window().raw_window_handle() {
-            raw_window_handle::RawWindowHandle::Windows(handle) => handle,
+        let handle = match window.window().raw_window_handle() {
+            raw_window_handle::RawWindowHandle::Win32(handle) => handle,
             _ => panic!(),
         };
         Some(handle.hwnd)
